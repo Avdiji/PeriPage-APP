@@ -20,7 +20,42 @@ Requirements:
 - **Windows:** Developer Mode (needed for plugin symlinks) and Visual Studio with the *Desktop development with C++* workload.
 - **Android:** the Android SDK, and minSdk 24.
 
-Pair the printer in the system Bluetooth settings first. On Windows, pick the outgoing COM port of the printer.
+The app finds printers in range by itself and pairs them on the first connect. No COM ports or system settings are needed.
+
+## Releases
+
+Pushing any tag creates a GitHub release named after the tag (`.github/workflows/release.yml`):
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow analyzes and tests the code, builds both platforms and attaches:
+- `PeriPage-<tag>-windows-x64.zip`: unzip it and run `PeriPage.exe`. The exe needs the DLLs and the `data` folder next to it.
+- `PeriPage-<tag>.apk`: install it on Android.
+
+Tags like `v1.2.3` or `1.2.3` also set the app version.
+
+### Android signing (one-time)
+
+Android only installs an update over an earlier version if both are signed with the same key. Without signing secrets, the workflow signs with a throwaway debug key and prints a warning. To create a key and store it as repository secrets:
+
+```sh
+keytool -genkey -v -keystore peripage-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias peripage
+base64 -w0 peripage-release.jks   # PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("peripage-release.jks"))
+```
+
+Add the following under *Settings → Secrets and variables → Actions*:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | output of the base64 command |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | `peripage` |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+Keep the `.jks` file and its passwords safe and out of the repo. If you lose them, existing installs can't be updated.
 
 ## Docs
 
