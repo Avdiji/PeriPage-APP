@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PeriPage Desktop</title>
+<style>
+  :root {
+    --bg: #ecebe8;
+    --ink: #15171a; --muted: #7d8189; --line: rgba(20, 22, 26, .07);
+    --accent: #e8553b; --on-accent: #fff;
+    --glass: rgba(255, 255, 255, .66); --glass-strong: rgba(255, 255, 255, .85);
+    --glass-edge: rgba(255, 255, 255, .6); --glass-shadow: 0 1px 2px rgba(0,0,0,.03), 0 4px 14px rgba(30, 30, 40, .04);
+    --blob-1: #ffc9b8; --blob-2: #c9dcff; --blob-3: #e6d9ff; --screen: #f7f6f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0c0e; --ink: #eef0f3; --muted: #8b9099; --line: rgba(255,255,255,.07);
+      --accent: #ff6a4d; --on-accent: #16181b;
+      --glass: rgba(36, 38, 43, .62); --glass-strong: rgba(52, 54, 60, .8);
+      --glass-edge: rgba(255, 255, 255, .06); --glass-shadow: 0 4px 16px rgba(0,0,0,.25);
+      --blob-1: #5a2a20; --blob-2: #1f3358; --blob-3: #3a2a55; --screen: #121316;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; padding: 48px 24px; }
+  header { max-width: 1280px; margin: 0 auto 28px; display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; font-weight: 650; letter-spacing: -.3px; }
+  header p, header a { color: var(--muted); }
+  header a { text-decoration: none; } header a:hover { color: var(--ink); }
+
+  /* ---------- window + ambient background ---------- */
+  .window { position: relative; max-width: 1280px; height: 800px; margin: 0 auto; border-radius: 14px; overflow: hidden;
+            background: var(--screen); border: 1px solid var(--line); box-shadow: 0 40px 80px -40px rgba(0,0,0,.25);
+            display: flex; flex-direction: column; isolation: isolate; animation: rise 1.1s cubic-bezier(.22,.7,.2,1) both; }
+  .window::before, .window::after, .window .blob { content: ""; position: absolute; z-index: -1; border-radius: 50%; filter: blur(90px); opacity: .32; }
+  .window::before { width: 420px; height: 420px; background: var(--blob-1); top: -120px; right: 8%; animation: drift 40s ease-in-out infinite alternate; }
+  .window::after  { width: 480px; height: 480px; background: var(--blob-2); bottom: -160px; left: 12%; animation: drift 46s ease-in-out infinite alternate-reverse; }
+  .window .blob   { width: 340px; height: 340px; background: var(--blob-3); top: 35%; right: -80px; opacity: .28; animation: drift 44s ease-in-out infinite alternate; }
+
+  .titlebar { display: flex; align-items: center; height: 38px; padding-left: 16px; font-size: 12px; color: var(--muted); flex: none; }
+  .titlebar .ctl { margin-left: auto; display: flex; height: 100%; }
+  .titlebar .ctl span { width: 46px; display: grid; place-items: center; font-size: 11px; transition: background .3s; }
+  .titlebar .ctl span:hover { background: var(--line); }
+  .titlebar .ctl span:last-child:hover { background: #e81123; color: #fff; }
+
+  .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px 1fr; gap: 20px; padding: 4px 20px 20px; }
+
+  /* ---------- glass ---------- */
+  .glass { position: relative; background: var(--glass); border-radius: 18px;
+           -webkit-backdrop-filter: blur(14px) saturate(115%); backdrop-filter: blur(14px) saturate(115%);
+           box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge), inset 0 0 0 1px var(--line); }
+
+  /* ---------- sidebar ---------- */
+  .side { display: flex; flex-direction: column; padding: 22px 14px 14px; }
+  .brand { font-size: 18px; font-weight: 650; letter-spacing: -.3px; padding: 0 10px 22px; }
+  .navlink { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; color: var(--muted); cursor: pointer;
+             transition: background .45s, color .45s; user-select: none; }
+  .navlink .k { margin-left: auto; font-size: 11px; opacity: .6; }
+  .navlink.on { color: var(--ink); font-weight: 600; background: var(--glass-strong); box-shadow: inset 0 1px 0 var(--glass-edge), 0 1px 3px rgba(0,0,0,.05); }
+  .navlink:not(.on):hover { color: var(--ink); }
+  .mini { margin-top: auto; padding: 14px; border-radius: 14px; background: var(--line); }
+  .mini .name { font-size: 13px; font-weight: 500; }
+
+  /* ---------- views ---------- */
+  .main { min-width: 0; min-height: 0; position: relative; }
+  .view { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 18px; opacity: 0; transform: translateY(6px);
+          pointer-events: none; transition: opacity .6s ease, transform .7s cubic-bezier(.22,.7,.2,1); }
+  .view.on { opacity: 1; transform: none; pointer-events: auto; }
+  .head { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px 0; }
+  .head h2 { font-size: 28px; font-weight: 650; letter-spacing: -.7px; }
+  .pill { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #2fb37a; flex: none; }
+  .dot.live { background: var(--accent); animation: ping 2.8s cubic-bezier(.2,.6,.4,1) infinite; }
+  .card { padding: 18px 20px; }
+  .label { font-size: 11px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 8px; }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; gap: 16px; }
+  .card > .row:first-of-type { padding-top: 2px; } .card > .row:last-child { padding-bottom: 2px; }
+  .row > span:first-child { color: var(--muted); }
+  .grow { flex: 1; min-height: 0; }
+
+  /* segmented control */
+  .seg { position: relative; display: flex; padding: 3px; border-radius: 11px; background: var(--line); font-size: 12px; }
+  .seg span { position: relative; z-index: 1; padding: 4px 12px; border-radius: 8px; color: var(--muted); cursor: pointer; transition: color .4s ease; user-select: none; }
+  .seg span.on { color: var(--ink); font-weight: 600; }
+  .seg .thumb { position: absolute; z-index: 0; top: 3px; bottom: 3px; border-radius: 8px; background: var(--glass-strong);
+                box-shadow: 0 1px 3px rgba(0,0,0,.08), inset 0 1px 0 var(--glass-edge);
+                transition: left .55s cubic-bezier(.3,1.12,.5,1), width .55s cubic-bezier(.3,1.12,.5,1); }
+
+  .btn { position: relative; overflow: hidden; display: block; width: 100%; padding: 15px; border: 0; border-radius: 16px; cursor: pointer;
+         font: 600 15px system-ui, sans-serif; color: var(--on-accent); background: var(--accent);
+         box-shadow: 0 6px 16px -10px var(--accent), inset 0 1px 0 rgba(255,255,255,.2); transition: transform .25s ease, box-shadow .4s ease; }
+  .btn::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,.14) 50%, transparent 65%);
+                transform: translateX(-100%); animation: sheen 9s ease-in-out infinite 3s; }
+  .btn:hover { box-shadow: 0 8px 20px -10px var(--accent), inset 0 1px 0 rgba(255,255,255,.2); }
+  .btn:active { transform: scale(.99); }
+  .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  .btn.ghost::after { display: none; }
+  .link { color: var(--muted); font-size: 13px; cursor: pointer; transition: color .3s; }
+  .link:hover { color: var(--ink); }
+
+  .progress { position: relative; height: 5px; border-radius: 3px; background: var(--line); margin: 12px 0 8px; overflow: hidden; }
+  .progress i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); animation: fill 14s cubic-bezier(.4,0,.2,1) infinite; }
+  .progress i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+                       background-size: 60px 100%; background-repeat: no-repeat; animation: shimmer 3s linear infinite; }
+  .pct { font-variant-numeric: tabular-nums; }
+  .pct::after { content: "64%"; animation: count 14s steps(1) infinite; }
+
+  /* ---------- draft ---------- */
+  .draft { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 340px; gap: 18px; }
+  .stage { display: flex; flex-direction: column; min-height: 0; }
+  .filebar { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+  .filebar .ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--accent); background: var(--glass-strong); }
+  .filebar div:nth-child(2) { flex: 1; }
+  .drop { flex: 1; min-height: 0; margin-top: 14px; border-radius: 18px; border: 1.5px dashed var(--line); display: flex; justify-content: center; align-items: flex-start; padding: 28px 0 0; overflow: hidden; position: relative; }
+  .drop .hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--muted); }
+  .preview-inner { display: flex; flex-direction: column; align-items: center; height: calc(100% - 44px); }
+  .slot { width: 236px; height: 12px; border-radius: 6px; margin-bottom: -6px; z-index: 2; }
+  .paper { width: 210px; height: 100%; background: #fff; padding: 14px; border-radius: 0 0 4px 4px; box-shadow: 0 10px 24px -14px rgba(0,0,0,.2);
+           animation: feed 10s cubic-bezier(.5,0,.3,1) infinite; }
+  .dither { height: 100%; background:
+            radial-gradient(circle at 50% 35%, transparent 0 20%, #fff 21%),
+            radial-gradient(ellipse at 50% 105%, transparent 0 42%, #fff 43%),
+            repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0/3px 3px; }
+  .pages { display: flex; justify-content: center; gap: 10px; padding-top: 12px; }
+  .pages span { width: 38px; height: 48px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; transition: box-shadow .4s; }
+  .pages span.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .pages span:nth-child(1) { background: repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0/3px 3px; opacity: .85; }
+  .pages span:nth-child(2) { background: repeating-linear-gradient(#fff 0 6px, #c8c8c8 6px 8px); }
+  .panel { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .panel .card { flex: none; }
+  .panel .spacer { flex: 1; }
+
+  /* ---------- history ---------- */
+  .tools { display: flex; gap: 12px; align-items: center; }
+  .search { flex: 1; padding: 11px 16px; border-radius: 14px; color: var(--muted); }
+  .table { flex: 1; min-height: 0; overflow: hidden; padding: 6px 8px; }
+  .th, .tr { display: grid; grid-template-columns: 52px 1.6fr 1.6fr 1fr 110px 92px; gap: 16px; align-items: center; padding: 10px 14px; }
+  .th { font-size: 11px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; }
+  .tr { border-radius: 12px; cursor: pointer; transition: background .5s; animation: rise 1s cubic-bezier(.22,.7,.2,1) both; }
+  .tr:hover { background: var(--line); }
+  .tr:nth-of-type(2) { animation-delay: .35s; } .tr:nth-of-type(3) { animation-delay: .45s; } .tr:nth-of-type(4) { animation-delay: .55s; }
+  .tr:nth-of-type(5) { animation-delay: .65s; } .tr:nth-of-type(6) { animation-delay: .75s; } .tr:nth-of-type(7) { animation-delay: .85s; }
+  .thumb { width: 34px; height: 42px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+  .thumb.img { background: repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0/3px 3px; opacity: .85; }
+  .thumb.pdf { background: repeating-linear-gradient(#fff 0 6px, #c8c8c8 6px 8px); }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tags span { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
+  .re { justify-self: end; padding: 7px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent); transition: background .4s, color .4s; }
+  .tr:hover .re { background: var(--accent); color: var(--on-accent); }
+
+  /* ---------- device ---------- */
+  .device { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-content: start; }
+  .col { display: flex; flex-direction: column; gap: 18px; }
+  .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kv div { padding: 10px 12px; border-radius: 12px; background: var(--line); }
+  .kv small { display: block; color: var(--muted); font-size: 11px; }
+  .list .item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .list .item:last-child { border: 0; }
+  .item .sub { color: var(--muted); font-size: 12px; }
+  .tick { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: var(--accent); color: var(--on-accent); }
+  .scan { display: flex; align-items: center; gap: 10px; }
+  .ring { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--accent); animation: spin 2.4s linear infinite; }
+
+  /* ---------- keyframes ---------- */
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes drift { to { transform: translate(-30px, 36px) scale(1.08); } }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(232,85,59,.4); } 70%, 100% { box-shadow: 0 0 0 7px rgba(232,85,59,0); } }
+  @keyframes sheen { 0%, 60% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+  @keyframes shimmer { from { background-position: -60px 0; } to { background-position: 600px 0; } }
+  @keyframes fill { 0% { width: 8%; } 85% { width: 100%; } 100% { width: 100%; } }
+  @keyframes count { 0% { content: "8%"; } 15% { content: "24%"; } 30% { content: "41%"; } 45% { content: "58%"; } 60% { content: "74%"; } 75% { content: "91%"; } 85%, 100% { content: "100%"; } }
+  @keyframes feed { 0% { clip-path: inset(0 0 100% 0); } 70%, 90% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .progress i { width: 64%; }
+  }
+  @media (max-width: 980px) {
+    .window { height: auto; }
+    .shell { grid-template-columns: 1fr; }
+    .main { min-height: 900px; }
+    .draft, .device { grid-template-columns: 1fr; }
+    .th, .tr { grid-template-columns: 44px 1fr 92px; } .th > :nth-child(n+3):not(:last-child), .tr > :nth-child(n+3):not(:last-child) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>PeriPage: desktop</h1><p>Windows layout of the same three views. Click the sidebar to switch.</p></div>
+  <a href="app.html">← mobile version</a>
+</header>
+
+<div class="window"><span class="blob"></span>
+  <div class="titlebar">PeriPage<div class="ctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+
+  <div class="shell">
+    <!-- SIDEBAR -->
+    <nav class="side glass">
+      <div class="brand">PeriPage</div>
+      <div class="navlink on" data-view="draft">Draft<span class="k">Ctrl 1</span></div>
+      <div class="navlink" data-view="history">History<span class="k">Ctrl 2</span></div>
+      <div class="navlink" data-view="device">Device<span class="k">Ctrl 3</span></div>
+
+      <div class="mini">
+        <div class="row" style="padding:0"><span class="name" style="color:var(--ink)">PeriPage_A6</span><span class="small muted">82%</span></div>
+        <div class="small muted" style="display:flex;align-items:center;gap:7px;margin-top:2px"><span class="dot live"></span>Printing · <span class="pct"></span></div>
+        <div class="progress" style="margin-bottom:0"><i></i></div>
+      </div>
+    </nav>
+
+    <div class="main">
+      <!-- DRAFT -->
+      <section class="view on" id="draft">
+        <div class="head"><h2>Draft</h2><span class="pill glass"><span class="dot"></span>Ready</span></div>
+        <div class="draft">
+          <div class="stage">
+            <div class="filebar glass"><span class="ic">PDF</span><div>shipping-label.pdf<div class="small muted">2 pages · 96 KB</div></div><span class="link">Choose file…</span></div>
+            <div class="drop">
+              <div class="preview-inner"><div class="slot glass"></div><div class="paper"><div class="dither"></div></div></div>
+              <div class="hint">Drop an image or PDF here · Ctrl+O to open</div>
+            </div>
+            <div class="pages"><span class="on"></span><span></span></div>
+          </div>
+          <div class="panel">
+            <div class="glass card">
+              <div class="label">Pages</div>
+              <div class="row"><span>Print</span><div class="seg"><span class="on">All</span><span>Current</span><span>Range</span></div></div>
+            </div>
+            <div class="glass card">
+              <div class="label">Image</div>
+              <div class="row"><span>Dither</span><div class="seg"><span>Off</span><span class="on">Floyd</span><span>Atkinson</span></div></div>
+              <div class="row"><span>Scale</span><div class="seg"><span class="on">Fit width</span><span>Original</span></div></div>
+              <div class="row"><span>Rotate</span><div class="seg"><span class="on">0°</span><span>90°</span><span>180°</span><span>270°</span></div></div>
+            </div>
+            <div class="glass card">
+              <div class="label">Printer</div>
+              <div class="row"><span>Density</span><div class="seg"><span>1</span><span>2</span><span class="on">3</span><span>4</span><span>5</span></div></div>
+              <div class="row"><span>Copies</span><div class="seg"><span class="on">1</span><span>2</span><span>3</span><span>4</span></div></div>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn">Print · 2 pages</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="view" id="history">
+        <div class="head"><h2>History</h2><span class="small muted">24 prints</span></div>
+        <div class="tools"><div class="search glass">⌕&nbsp; Search printed files</div></div>
+        <div class="table glass">
+          <div class="th"><span></span><span>File</span><span>Settings</span><span>Printer</span><span>Printed</span><span></span></div>
+          <div class="tr"><div class="thumb pdf"></div><div>shipping-label.pdf<div class="small muted">2 pages</div></div><div class="tags"><span>Floyd</span><span>D3</span><span>Fit</span></div><span class="muted">PeriPage_A6</span><span class="muted">Today 14:02</span><span class="re">Print</span></div>
+          <div class="tr"><div class="thumb img"></div><div>cat.jpg<div class="small muted">1200 × 1600</div></div><div class="tags"><span>Atkinson</span><span>D4</span><span>90°</span><span>×2</span></div><span class="muted">PeriPage_A6</span><span class="muted">Today 09:41</span><span class="re">Print</span></div>
+          <div class="tr"><div class="thumb img"></div><div>qr-wifi.png<div class="small muted">512 × 512</div></div><div class="tags"><span>Off</span><span>D5</span><span>Original</span></div><span class="muted">PeriPage_A6</span><span class="muted">Yesterday 18:20</span><span class="re">Print</span></div>
+          <div class="tr"><div class="thumb pdf"></div><div>recipe.pdf<div class="small muted">5 pages</div></div><div class="tags"><span>Floyd</span><span>D3</span><span>p. 1–3</span></div><span class="muted">PPG_P21_HD</span><span class="muted">Yesterday 11:05</span><span class="re">Print</span></div>
+          <div class="tr"><div class="thumb img"></div><div>boarding-pass.jpg<div class="small muted">900 × 1400</div></div><div class="tags"><span>Off</span><span>D4</span><span>Fit</span></div><span class="muted">PeriPage_A6</span><span class="muted">Oct 20</span><span class="re">Print</span></div>
+          <div class="tr"><div class="thumb pdf"></div><div>todo.pdf<div class="small muted">1 page</div></div><div class="tags"><span>Off</span><span>D3</span><span>Fit</span></div><span class="muted">PeriPage_A6</span><span class="muted">Oct 18</span><span class="re">Print</span></div>
+        </div>
+      </section>
+
+      <!-- DEVICE -->
+      <section class="view" id="device">
+        <div class="head"><h2>Device</h2><span class="pill glass"><span class="dot live"></span>Printing</span></div>
+        <div class="device">
+          <div class="col">
+            <div class="glass card">
+              <div class="label">Current print</div>
+              <div class="row" style="padding:0"><span style="color:var(--ink);font-weight:500">shipping-label.pdf</span><span class="pct muted"></span></div>
+              <div class="progress"><i></i></div>
+              <div class="small muted">Page 2 of 2 · copy 1 of 1</div>
+            </div>
+            <div class="glass card">
+              <div class="label">Printer</div>
+              <div class="kv">
+                <div><small>Name</small>PeriPage_A6_3F21</div>
+                <div><small>Battery</small>82%</div>
+                <div><small>Firmware</small>1.4.7</div>
+                <div><small>Print width</small>384 dots</div>
+              </div>
+            </div>
+            <div class="glass card">
+              <div class="label">Defaults</div>
+              <div class="row"><span>Density</span><div class="seg"><span>1</span><span>2</span><span class="on">3</span><span>4</span><span>5</span></div></div>
+              <div class="row"><span>Paper</span><div class="seg"><span class="on">Roll</span><span>Label</span></div></div>
+              <div class="row"><span>Auto-off</span><div class="seg"><span>15m</span><span class="on">30m</span><span>60m</span><span>Off</span></div></div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="glass card list">
+              <div class="row" style="padding:0 0 6px"><span class="label" style="margin:0">Printers</span><span class="scan small muted"><span class="ring"></span>Scanning</span></div>
+              <div class="item"><div>PeriPage_A6_3F21<div class="sub">384 dots · COM5</div></div><span class="tick">✓</span></div>
+              <div class="item"><div>PeriPage_A40_77C0<div class="sub">A4 · COM7</div></div><span class="link">Connect</span></div>
+              <div class="item"><div>PPG_P21_HD_1A02<div class="sub">576 dots · COM9</div></div><span class="link">Connect</span></div>
+            </div>
+            <div class="glass card">
+              <div class="label">Connection</div>
+              <div class="row"><span>Port</span><div class="seg"><span class="on">COM5</span><span>COM7</span><span>COM9</span><span>Auto</span></div></div>
+              <div class="row"><span>Reconnect on start</span><div class="seg"><span class="on">On</span><span>Off</span></div></div>
+            </div>
+            <button class="btn ghost">Disconnect</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Sliding glass thumb for segmented controls.
+  const segs = [...document.querySelectorAll('.seg')];
+  const layoutSeg = seg => {
+    const thumb = seg.querySelector('.thumb');
+    const on = seg.querySelector('span.on') || seg.querySelector('span');
+    thumb.style.left = on.offsetLeft + 'px';
+    thumb.style.width = on.offsetWidth + 'px';
+  };
+  segs.forEach(seg => {
+    const thumb = document.createElement('i');
+    thumb.className = 'thumb';
+    seg.prepend(thumb);
+    const items = [...seg.querySelectorAll('span')];
+    items.forEach(s => s.addEventListener('click', () => {
+      items.forEach(o => o.classList.remove('on'));
+      s.classList.add('on');
+      layoutSeg(seg);
+    }));
+    layoutSeg(seg);
+  });
+
+  // Sidebar view switching (+ Ctrl+1/2/3).
+  const links = [...document.querySelectorAll('.navlink')];
+  const show = id => {
+    links.forEach(l => l.classList.toggle('on', l.dataset.view === id));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === id));
+    document.querySelectorAll('#' + id + ' .seg').forEach(layoutSeg);
+  };
+  links.forEach(l => l.addEventListener('click', () => show(l.dataset.view)));
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); show(['draft', 'history', 'device'][+e.key - 1]); }
+  });
+  document.querySelectorAll('.pages span').forEach(p => p.addEventListener('click', () => {
+    document.querySelectorAll('.pages span').forEach(o => o.classList.remove('on'));
+    p.classList.add('on');
+  }));
+</script>
+</body>
+</html>

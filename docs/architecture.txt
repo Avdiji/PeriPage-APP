@@ -1,0 +1,150 @@
+PeriPage-APP — Architecture & File Structure
+=============================================
+Flutter rewrite of the PeriPage printer app (reference: com.ileadtek.peripage v6.10.12).
+Targets : Android + Windows          Flutter: 3.47.8 (pinned in .fvmrc)
+Backend : none (offline, local storage only)
+Style   : Clean Architecture, feature-first core, Riverpod (MVVM-ish),
+          same conventions as github.com/Avdiji/flutter_supabase_login
+
+Three features:
+
+  1. Device   — first-run setup (find, connect, save as default), live status
+                (ready / printing / no paper / low battery …) with a progress bar for
+                the running print, printer info, device defaults.
+  2. Draft    — pick any printable file (PNG, JPG, JPEG, WEBP, BMP, GIF, PDF), adjust
+                settings with a live preview, print.
+  3. History  — every printed file with the exact settings it was printed with;
+                one tap reprints it, tapping the row opens it as a new draft.
+
+
+1. LAYERS & DEPENDENCY RULES
+----------------------------
+
+  presentation/            Screens & widgets. Watch providers, never touch services.
+        |
+  core/<feature>/state/    Riverpod notifiers = view models.
+        |
+  core/<feature>/domain/   Entities, repository interfaces, use cases. Pure Dart.
+        ^
+  core/<feature>/data/     Repository implementations. Map service DTOs -> entities.
+        |
+  services/                Transport, protocol, imaging, files, local storage.
+
+  - Arrows = import direction. domain/ imports nothing outside itself.
+  - All dependencies are Riverpod providers; the platform transport (Android SPP /
+    Windows COM) is chosen in main.dart via a ProviderScope override.
+  - services/protocol and services/imaging are pure Dart and unit-tested.
+
+
+2. FILE TREE
+------------
+
+lib/
+├─ main.dart                               Picks transport per platform, runApp
+├─ app.dart                                MaterialApp (theme, routes)
+├─ config/
+│  ├─ routes.dart                          '/' StartGate, '/setup'
+│  ├─ theme.dart                           AppTheme + GlassColors theme extension
+│  ├─ constants.dart                       Colors, Styling, Motion, Timings
+│  └─ adaptives.dart                       Desktop breakpoint (900 px)
+├─ services/
+│  ├─ transport/
+│  │  ├─ printer_transport.dart            Interface + provider (overridden in main)
+│  │  ├─ printer_client.dart               One request at a time, reply collection,
+│  │  │                                    chunked writes with progress
+│  │  ├─ android_spp_transport.dart        flutter_blue_classic, RFCOMM 00001101-…
+│  │  ├─ windows_serial_transport.dart     flutter_libserialport, Bluetooth COM port
+│  │  └─ models/discovered_device_in.dart
+│  ├─ protocol/
+│  │  ├─ commands.dart                     10 FF … command bytes
+│  │  ├─ raster_encoder.dart               1-bpp packing + GS v 0 framing
+│  │  ├─ reply_parser.dart                 OK, status, battery, text replies
+│  │  └─ printer_models.dart               BT name -> width, dpi, compressed-only flag
+│  ├─ imaging/
+│  │  ├─ mono_bitmap.dart                  GrayImage / MonoBitmap
+│  │  ├─ image_scaler.dart                 Rotate, fit/centre, greyscale, thumbnails
+│  │  └─ dithering.dart                    Threshold, Floyd–Steinberg, Atkinson
+│  ├─ files/
+│  │  ├─ file_store.dart                   Picker + private copies, thumbnails
+│  │  └─ document_loader.dart              Image decode, PDF page render (pdfx)
+│  └─ storage/
+│     ├─ preferences_service.dart          Saved printer, device defaults
+│     └─ history_store.dart                history.json
+├─ core/
+│  ├─ device/
+│  │  ├─ domain/  device_entity, device_settings, printer_status, device_repo,
+│  │  │           device_usecases (Connect, ReconnectSaved)
+│  │  ├─ data/    device_repo_impl
+│  │  └─ state/   device_provider (device, saved device, discovery, settings),
+│  │              printer_status_provider (polling + running job combined)
+│  ├─ printing/
+│  │  ├─ domain/  print_settings, print_job_entity (Draft, Job, PreviewBitmap),
+│  │  │           print_progress, print_repo, print_usecases
+│  │  ├─ data/    print_repo_impl (render in isolate, frame, send, progress)
+│  │  └─ state/   draft_provider (+ previewProvider), print_job_provider (app-wide)
+│  └─ history/
+│     ├─ domain/  history_entry, history_repo, history_usecases (Reprint)
+│     ├─ data/    history_repo_impl
+│     └─ state/   history_provider
+└─ presentation/
+   ├─ common/widgets/
+   │  ├─ glass/   ambient_background, glass_panel, glass_segmented, accent_button,
+   │  │           status_pill (+ StatusDot), progress_line
+   │  ├─ thermal_preview.dart              Paper strip that feeds out of a slot
+   │  ├─ current_print_card.dart           Status / progress card + sidebar MiniStatus
+   │  ├─ printer_list.dart                 Discovered printers
+   │  ├─ screen_header.dart, setting_row.dart, fade_slide_in.dart
+   ├─ shell/      start_gate.dart (setup vs. shell), app_shell.dart (sidebar /
+   │              floating tab bar, shortcuts, snackbars)
+   ├─ device/     setup_screen.dart, device_screen.dart
+   ├─ draft/      draft_screen.dart
+   └─ history/    history_screen.dart
+
+test/
+├─ services/protocol/   commands, raster_encoder, reply_parser (+ model lookup)
+├─ services/imaging/    dithering
+└─ presentation/        app_shell_smoke_test (all views, phone + desktop sizes)
+
+
+3. FLOWS
+--------
+
+  First run
+    no saved printer -> Setup: list paired printers (PeriPage_*, PPG_*, SQAI_PP_*)
+    -> connect -> read model/firmware/serial -> save as default -> apply defaults
+    (density, paper, auto-off) -> read battery -> shell
+
+  Draft -> Print
+    pick -> copy into app storage -> per page: load (PDF rendered at 2× width)
+    -> rotate/scale to head width -> dither (isolate) -> preview
+    Print: density, then per page and copy:
+       10 FF FE 01 | 12 × 00 | 1D 76 30 raster | 1B 4A feed | 10 FF FE 45
+    written in 1024-byte chunks; progress = bytes written / total
+    -> on success a HistoryEntry (file copy + settings + thumbnail) is stored
+
+  Status
+    every 5 s while connected and idle: 10 FF 40 (status) + 10 FF 50 F1 (battery)
+    while a job runs the status is "Printing" with the job's progress
+
+  History
+    Print   -> rebuilds the identical job (ReprintUseCase) -> same print path
+    Row tap -> opens the file in Draft with its settings
+
+
+4. PROTOCOL SUMMARY (details -> docs/protocol.md)
+-------------------------------------------------
+
+  Model / FW / SN           10 FF 20 F0 / 10 FF 20 F1 / 10 FF 20 F2
+  Battery                   10 FF 50 F1      -> 2 bytes, second = percent
+  Status                    10 FF 40         -> 00 idle, 01 busy, 04 no paper, 08 low bat.
+  Density                   10 FF 10 00 <0|1|2>
+  Paper type                10 FF 10 03 <0 roll | 2 label>
+  Auto-off                  10 FF 12 <hi> <lo>   (minutes)
+  Start / end print         10 FF FE 01  …  10 FF FE 45
+  Feed n dots               1B 4A <n>
+  Raster                    1D 76 30 00 <bytesPerRow LE16> <height LE16> + data
+  Ack                       "OK" (4F 4B)
+
+  KNOWN GAP: models the official app drives with compressed raster
+  (1F 00 … + native libCode.so: A8/A9/A40/P40/H2/Q9 families …) receive GS v 0
+  here; whether their firmware accepts it is untested. The Device view says so.
